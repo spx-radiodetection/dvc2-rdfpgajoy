@@ -50,8 +50,8 @@ struct rdfpgajoy_data {
 	int i2c_failures;
 };
 
-static void rdfpgajoy_input_caps(struct input_dev *input, bool is_rightjoy, 
-                                 int min, int max, int fuzz)
+static void rdfpgajoy_input_caps(struct input_dev *input, bool is_rightjoy,
+				 int min, int max, int fuzz)
 {
 	/* we provide key (button) events, absolute position events */
 	set_bit(EV_KEY, input->evbit);
@@ -109,8 +109,8 @@ static ssize_t joyside_store(struct device *dev,
 		return -EINVAL;
 
 	p->is_rightjoy = (buffer[0] == 'r');
-	rdfpgajoy_input_caps(p->input_dev, p->is_rightjoy, 
-	                     p->min, p->max, p->fuzz);
+	rdfpgajoy_input_caps(p->input_dev, p->is_rightjoy,
+			     p->min, p->max, p->fuzz);
 
 	return count;
 }
@@ -181,9 +181,9 @@ static void rdfpgajoy_i2cread(struct work_struct *work)
 			p->i2c_failures++;
 		} else {
 			/* y coord first, x coord second on i2c message */
-			int y = ( ((int)buf[0] << 8) | (int)buf[1] ) & 0xFFF;
-			int x = ( ((int)buf[2] << 8) | (int)buf[3] ) & 0xFFF;
-			/*pr_debug("joystick %02x - %03x %03x\n", p->i2c_client->addr, x, y); */
+			int y = (((int)buf[0] << 8) | (int)buf[1]) & 0xFFF;
+			int x = (((int)buf[2] << 8) | (int)buf[3]) & 0xFFF;
+
 			raise_events(p, x, y, 0);
 			p->i2c_failures = 0;
 		}
@@ -195,8 +195,8 @@ static void rdfpgajoy_i2cread(struct work_struct *work)
 				   HZ / (unsigned long)poll_rate);
 	} else {
 		/* in the case of too many failures...
-		 * queue same work item to run again in 20 seconds time 
-		 * (to avoid flooding the log with attempts) 
+		 * queue same work item to run again in 20 seconds time
+		 * (to avoid flooding the log with attempts)
 		 */
 		queue_delayed_work(wq, dwork, HZ * 10UL);
 	}
@@ -265,7 +265,7 @@ static int rdfpgajoy_probe(struct i2c_client *client,
 	p->input_dev = input;
 
 	/* Set capabilities KEYS, ABS values */
-	rdfpgajoy_input_caps(p->input_dev, p->is_rightjoy, 
+	rdfpgajoy_input_caps(p->input_dev, p->is_rightjoy,
 			     p->min, p->max, p->fuzz);
 
 	/* Register with the input subsystem */
