@@ -180,8 +180,9 @@ static void rdfpgajoy_i2cread(struct work_struct *work)
 			dev_err(dev, "%s: i2c recv failed\n", __func__);
 			p->i2c_failures++;
 		} else {
-			int x = ( ((int)buf[0] << 8) | (int)buf[1] ) & 0xFFF;
-			int y = ( ((int)buf[2] << 8) | (int)buf[3] ) & 0xFFF;
+			/* y coord first, x coord second on i2c message */
+			int y = ( ((int)buf[0] << 8) | (int)buf[1] ) & 0xFFF;
+			int x = ( ((int)buf[2] << 8) | (int)buf[3] ) & 0xFFF;
 			/*pr_debug("joystick %02x - %03x %03x\n", p->i2c_client->addr, x, y); */
 			raise_events(p, x, y, 0);
 			p->i2c_failures = 0;
