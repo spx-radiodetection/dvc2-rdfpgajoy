@@ -44,6 +44,9 @@ struct rdfpgajoy_data {
 	struct i2c_client *i2c_client;
 	struct delayed_work dwork;
 	bool is_rightjoy;
+	bool calibrate;
+	int center_x;
+	int center_y;
 	int min;
 	int max;
 	int fuzz;
@@ -162,7 +165,71 @@ static struct attribute_group rdfpgajoy_attr_group = {
 	.attrs = rdfpgajoy_sysfs_attrs,
 };
 
-static void rdfpgajoy_i2cread(struct work_struct *work)
+
+/**
+ * normalise_axis - scale incoming value so that the calibrated center point
+ *                  is halfway between min and max
+ * @v: value to scale
+ * @min: minimum
+ * @c: calibrated center point
+ * @max: maximum
+ *
+ * Returns: modified value 
+ *
+ * Joysticks can rest slightly off center.  Calibration occurs at startup to
+ * obtain this value.  Any readings are linearly adjusted so that readings at
+ * the calibration center is halfway between min and max (ideal_c below)
+ * whilst preserving min and max.
+ */
+static int normalise_axis(int v, int min, int c, int max)
+{
+	int ideal_c = (min+max)/2;
+
+	/* protect against divide by zero */
+	if (c == max || c == min )
+		return c;
+
+	/* limit v to min and max */
+	v = (v > max ? max : v);
+	v = (v < min ? min : v);
+	
+	if (v > c)
+		v = (v-c)*ideal_c/(max-c) + ideal_c;
+	else
+		v = v*(ideal_c-min)/(c-min);
+
+	return v;
+}
+
+static bool rdfpgajoy_i2cread(struct rdfpgajoy_data *p, int *x, int *y, int *btn)
+{
+	struct device *dev = &p->i2c_client->dev;
+
+	if (suppress_i2c) {
+		pr_debug("%s: suppressed i2c read to 0x%02x\n", __func__, 
+		         p->i2c_client->addr);
+	} else {
+		char buf[4];
+
+		if (i2c_master_recv(p->i2c_client, buf, sizeof(buf)) != 4) {
+			dev_err(dev, "%s: i2c recv failed for address 0x%02x\n",
+			        __func__, p->i2c_client->addr);
+			p->i2c_failures++;
+		} else {
+			/* y coord first, x coord second on i2c message */
+			*y = (((int)buf[0] << 8) | (int)buf[1]) & 0xFFF;
+			*x = (((int)buf[2] << 8) | (int)buf[3]) & 0xFFF;
+			
+			if (btn)
+				*btn = 0;
+			
+			p->i2c_failures = 0;
+		}
+	}
+	return (p->i2c_failures == 0);
+}
+
+static void rdfpgajoy_work(struct work_struct *work)
 {
 	/* suppled work struct is contained within struct rdfpgajoy_data */
 	struct delayed_work *dwork = to_delayed_work(work);
@@ -171,22 +238,23 @@ static void rdfpgajoy_i2cread(struct work_struct *work)
 						dwork);
 	struct device *dev = &p->i2c_client->dev;
 
-	if (suppress_i2c) {
-		pr_debug("deferred hello %d\n", p->i2c_client->addr);
-	} else {
-		char buf[4];
+	int x=0, y=0, btn;
 
-		if (i2c_master_recv(p->i2c_client, buf, sizeof(buf)) != 4) {
-			dev_err(dev, "%s: i2c recv failed\n", __func__);
-			p->i2c_failures++;
-		} else {
-			/* y coord first, x coord second on i2c message */
-			int y = (((int)buf[0] << 8) | (int)buf[1]) & 0xFFF;
-			int x = (((int)buf[2] << 8) | (int)buf[3]) & 0xFFF;
-
-			raise_events(p, x, y, 0);
-			p->i2c_failures = 0;
+	if (rdfpgajoy_i2cread(p, &x, &y, &btn)) {
+		if (p->calibrate) {
+			p->center_x = x;
+			p->center_y = y;
+			p->calibrate = false;
+			dev_info(dev, "calibrated %s joystick at 0x%02x to mid point 0x%x,0x%x\n", 
+			         (p->is_rightjoy ? "right" : "left"),
+			         p->i2c_client->addr,
+			         x, y);
 		}
+
+		x = normalise_axis(x, p->min, p->center_x, p->max);
+		y = normalise_axis(y, p->min, p->center_y, p->max);
+
+		raise_events(p, x, y, btn);
 	}
 
 	if (p->i2c_failures < 5) {
@@ -195,7 +263,7 @@ static void rdfpgajoy_i2cread(struct work_struct *work)
 				   HZ / (unsigned long)poll_rate);
 	} else {
 		/* in the case of too many failures...
-		 * queue same work item to run again in 20 seconds time
+		 * queue same work item to run again in 10 seconds time
 		 * (to avoid flooding the log with attempts)
 		 */
 		queue_delayed_work(wq, dwork, HZ * 10UL);
@@ -238,6 +306,7 @@ static int rdfpgajoy_probe(struct i2c_client *client,
 	input->id.version = 0x0001;
 	input->name = RDFPGAJOY_NAME;
 
+	p->calibrate = false;
 	p->min = joy_min;
 	p->max = joy_max;
 	p->fuzz = joy_fuzz;
@@ -245,6 +314,7 @@ static int rdfpgajoy_probe(struct i2c_client *client,
 	if (np) {
 		u32 v;
 
+		p->calibrate = of_property_read_bool(np, "calibrate");
 		p->is_rightjoy = of_property_read_bool(np, "joystick,right");
 
 		if (of_property_read_u32(np, "poll_rate", &v) == 0)
@@ -260,6 +330,10 @@ static int rdfpgajoy_probe(struct i2c_client *client,
 			p->fuzz = (int)v;
 
 	}
+
+	/* set center values, overwritten by calibration if selected */
+	p->center_x = (p->min+p->max)/2;
+	p->center_y = p->center_x;
 
 	p->i2c_client = client;
 	p->input_dev = input;
@@ -279,7 +353,7 @@ static int rdfpgajoy_probe(struct i2c_client *client,
 	input_set_drvdata(input, p);
 	i2c_set_clientdata(client, p);
 
-	INIT_DELAYED_WORK(&p->dwork, rdfpgajoy_i2cread);
+	INIT_DELAYED_WORK(&p->dwork, rdfpgajoy_work);
 
 	/* start repeated calls specified by p->dwork */
 	queue_delayed_work(wq, &p->dwork,

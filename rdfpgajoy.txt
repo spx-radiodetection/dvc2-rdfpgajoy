@@ -1,0 +1,58 @@
+An evdev joystick driver for the Radiodetection DVC2 fpga.
+
+The joystick interface from the fpga returns two values an x and y co-ordinate
+of range 0x000 to 0xFFF.  The settings in the device tree below can be used
+to set a minimum and maximum range, which will clip the values read.  Joystick
+fuzz is used to filter out noise on the joystick (reading deltas must be 
+greater than the fuzz to be raised as an event).
+
+The fpga supporting the joystick is polled at a rate specified by poll_rate.
+To high a value here will increase i2c traffic.
+
+Should calibration be selected, using the calibrate property, then the first
+reading is assumed as the joystick center point ("centered").  The readings
+are then adjusted so that the joystick reports a exactly half way between
+joy_min and joy_max when the joystick is "centered".
+
+Required properties:
+- compatible: "rdfpgajoy"
+- reg: the I2C address
+
+Optional properties:
+- poll_rate: joystick sampling rate per second (default 10)
+- joy_min: joystick minimum (default 0)
+           values from the joystick lower than this will be set to the minimum
+- joy_max: joystick maximum (default 0xFFF)
+           values from the joystick higher than this will be set to the maximum
+- joy_fuzz: joystick fuzz (default: 0x100)
+            used for noise filtering the values read
+- joystick,right: set at right joystick (default left)
+- calibrate: first read assume joystick centered to calibrate (default assume
+             center is halfway between min/max)
+
+
+Example device tree for two joysticks at two i2c addresses
+
+	joystick_left: rdfpgajoy@2c {
+		compatible = "rdfpgajoy";
+		reg = <0x2c>;
+		calibrate;
+		poll_rate = <10>;
+		joy_min = <0x000>;
+		joy_max = <0xFFF>;
+		joy_fuzz = <0x100>;
+		status = "okay";
+	};
+	
+	joystick_right: rdfpgajoy@2d {
+		compatible = "rdfpgajoy";
+		reg = <0x2d>;
+		joystick,right;
+		calibrate;
+		poll_rate = <10>;
+		joy_min = <0x000>;
+		joy_max = <0xFFF>;
+		joy_fuzz = <0x100>;
+		status = "okay";
+	};
+
