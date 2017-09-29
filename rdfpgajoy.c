@@ -212,8 +212,6 @@ static bool rdfpgajoy_i2cread(struct rdfpgajoy_data *p, int *x, int *y, int *btn
 		char buf[4];
 
 		if (i2c_master_recv(p->i2c_client, buf, sizeof(buf)) != 4) {
-			dev_err(dev, "%s: i2c recv failed for address 0x%02x\n",
-			        __func__, p->i2c_client->addr);
 			p->i2c_failures++;
 		} else {
 			/* y coord first, x coord second on i2c message */
@@ -226,6 +224,13 @@ static bool rdfpgajoy_i2cread(struct rdfpgajoy_data *p, int *x, int *y, int *btn
 			p->i2c_failures = 0;
 		}
 	}
+
+	/* limit the number of error messages */
+	if (p->i2c_failures>1 && p->i2c_failures<=5) {
+		dev_warn(dev, "%s: i2c recv failed for address 0x%02x\n",
+			 __func__, p->i2c_client->addr);
+	}
+
 	return (p->i2c_failures == 0);
 }
 
