@@ -1,13 +1,13 @@
 An evdev joystick driver for the Radiodetection DVC2 fpga.
 
 The joystick interface from the fpga returns two values an x and y co-ordinate
-of range 0x000 to 0xFFF.  The settings in the device tree below can be used
-to set a minimum and maximum range, which will clip the values read.  Joystick
-fuzz is used to filter out noise on the joystick (reading deltas must be 
-greater than the fuzz to be raised as an event).
+of range 0x000 to 0xFFF (by default).  These limits can be adjusted using the
+device tree, clipping the limits should the hardware report larger values.
+Joystick fuzz is used to filter out noise on the joystick (reading deltas must
+be greater than the fuzz to be raised as an event).
 
 The fpga supporting the joystick is polled at a rate specified by poll_rate.
-To high a value here will increase i2c traffic.
+Raising the value here will increase i2c traffic.
 
 Should calibration be selected, using the calibrate property, then the first
 reading is assumed as the joystick center point ("centered").  The readings
